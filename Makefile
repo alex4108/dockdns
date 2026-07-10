@@ -1,5 +1,5 @@
 BINARY_NAME        := dockdns
-IMAGE_NAME         := alex4108/$(BINARY_NAME)
+IMAGE_NAME         := ghcr.io/tarow/$(BINARY_NAME)
 TAGS               := latest
 TEMPL_BIN 		   := ./bin/templ
 
