@@ -26,9 +26,9 @@ You are a documentation specialist for DockDNS. Your role is to maintain and imp
 | dockdns.a | 10.0.0.1 | Static IPv4 address |
 | dockdns.aaaa | ::1 | Static IPv6 address |
 | dockdns.cname | target.example.com | CNAME target |
-| dockdns.cname.\<id\> | internal.local | Zone-specific CNAME override |
+| dockdns.overrides.\<id\>.cname | internal.local | Zone-specific CNAME override |
 | dockdns.proxied | true | Cloudflare proxy (default) |
-| dockdns.proxied.\<id\> | false | Zone-specific proxied override |
+| dockdns.overrides.\<id\>.proxied | false | Zone-specific proxied override |
 | dockdns.ttl | 300 | Record TTL |
 | dockdns.comment | My app | Record comment |
 
@@ -36,7 +36,7 @@ You are a documentation specialist for DockDNS. Your role is to maintain and imp
 ```yaml
 zones:
   - name: example.com           # Zone name
-    id: cloudflare-prod         # Optional: custom ID for overrides
+    id: cloudflare_prod         # Optional: custom ID for overrides
     provider: cloudflare        # Provider type
     apiToken: ...               # API token
     zoneID: ...                 # Cloudflare zone ID

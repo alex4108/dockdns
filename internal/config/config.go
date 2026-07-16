@@ -1,12 +1,19 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
 
 	"github.com/Tarow/dockdns/internal/constants"
 )
+
+var overrideZoneIDRegexp = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
+
+func IsValidOverrideZoneID(id string) bool {
+	return overrideZoneIDRegexp.MatchString(id)
+}
 
 type AppConfig struct {
 	Interval        int       `yaml:"interval" env-default:"600"`
@@ -40,6 +47,23 @@ func (c *AppConfig) EnrichZoneSecretsFromEnv() {
 	}
 }
 
+func (c AppConfig) Validate() error {
+	seenZoneKeys := map[string]string{}
+	for _, zone := range c.Zones {
+		if zone.ID != "" && !IsValidOverrideZoneID(zone.ID) {
+			return fmt.Errorf("invalid zone id %q for zone %q: use only letters, numbers, and underscores", zone.ID, zone.Name)
+		}
+
+		zoneKey := zone.GetKey()
+		if existingZone, exists := seenZoneKeys[zoneKey]; exists {
+			return fmt.Errorf("duplicate zone key %q for zones %q and %q", zoneKey, existingZone, zone.Name)
+		}
+		seenZoneKeys[zoneKey] = zone.Name
+	}
+
+	return nil
+}
+
 type LogFormat string
 
 const LogFormatSimple = "simple"
@@ -59,8 +83,9 @@ type Zone struct {
 	Name string `yaml:"name"`
 
 	// Optional user-defined identifier for this zone configuration.
-	// Used as the key for provider-specific overrides (e.g., dockdns.cname.<id>).
-	// If not set, defaults to the zone Name for backwards compatibility.
+	// Used as the key for provider-specific overrides (e.g., dockdns.overrides.<id>.cname).
+	// If set, must contain only letters, numbers, and underscores. If not set,
+	// defaults to the zone Name for backwards compatibility.
 	ID string `yaml:"id,omitempty"`
 
 	// For cloudflare and technitium, the API token
@@ -95,7 +120,7 @@ type DomainRecordBase struct {
 	IP6     string `yaml:"aaaa" label:"dockdns.aaaa"`
 	CName   string `yaml:"cname" label:"dockdns.cname"`
 	TTL     int    `yaml:"ttl" label:"dockdns.ttl"`
-	Proxied bool   `yaml:"proxied" label:"dockdns.proxied"`
+	Proxied *bool  `yaml:"proxied" label:"dockdns.proxied"`
 	Comment string `yaml:"comment" label:"dockdns.comment"`
 }
 
@@ -109,11 +134,11 @@ type DomainRecord struct {
 	//
 	// Config example:
 	//   overrides:
-	//     technitium-internal:
+	//     technitium_internal:
 	//       cname: internal-target.local
 	//       comment: Internal server
 	//
-	// Label example: dockdns.technitium-internal.cname=internal-target.local
+	// Label example: dockdns.overrides.technitium_internal.cname=internal-target.local
 	Overrides map[string]DomainRecordBase `yaml:"overrides,omitempty"`
 
 	// Container metadata (populated for Docker-sourced records)
@@ -160,10 +185,13 @@ func (d DomainRecord) GetContentForZone(recordType string, zoneID string) string
 // GetProxiedForZone returns the proxied setting, with zone-specific override if available.
 // The zoneID parameter should be the zone's ID (if set) or Name (for backwards compatibility).
 func (d DomainRecord) GetProxiedForZone(zoneID string) bool {
-	if o, ok := d.override(zoneID); ok {
-		return o.Proxied
+	if o, ok := d.override(zoneID); ok && o.Proxied != nil {
+		return *o.Proxied
 	}
-	return d.Proxied
+	if d.Proxied != nil {
+		return *d.Proxied
+	}
+	return false
 }
 
 // GetTTLForZone returns the TTL setting, with zone-specific override if available.

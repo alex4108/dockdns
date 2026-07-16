@@ -129,7 +129,7 @@ func (h *Handler) Run() error {
 
 		if h.DnsCfg.PurgeUnknown {
 			slog.Debug("starting purge of unknown domains", "zone", providerInfo.ZoneName, "domains", domains)
-			h.purgeUnknownRecords(providerInfo.Provider, domains)
+			h.purgeUnknownRecords(providerInfo.Provider, domains, providerInfo.ZoneKey)
 			slog.Debug("finished purge of unknown domains", "zone", providerInfo.ZoneName, "domains", domains)
 		}
 	}

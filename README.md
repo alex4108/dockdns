@@ -36,7 +36,7 @@ log:
 
 zones: # Zone configuration (multiple zones can be provided)
   - name: somedomain.com # Root name of the zone
-    id: cloudflare-prod # Optional: custom ID for override labels (defaults to zone name if not set)
+    id: cloudflare_prod # Optional: custom ID for override labels (Docker labels require letters, numbers, and underscores)
     provider: cloudflare # Name of the provider. Supported: cloudflare, technitium
 
 ## Technitium DNS Provider
@@ -48,7 +48,7 @@ Example zone configuration:
 ```yaml
 zones:
   - name: internal.example.com
-    id: technitium-internal           # Optional: custom ID for override labels
+    id: technitium_internal           # Optional: custom ID for override labels
     provider: technitium
     apiURL: http://192.168.1.10:5380  # Technitium DNS Server URL
     # Option 1: Use API token (recommended)
@@ -94,9 +94,9 @@ domains:
     cname: "default-target.somedomain.com"
     proxied: false
     overrides:
-      technitium-internal:
+      technitium_internal:
         cname: "internal-target.local"  # Different CNAME for the Technitium zone
-      cloudflare-prod:
+      cloudflare_prod:
         proxied: true                   # Enable Cloudflare proxy for this zone
 ```
 
@@ -116,26 +116,26 @@ Supported labels:
 
 #### Zone-Specific Overrides
 
-You can override any field for specific zones/providers using the format: `dockdns.<zone-id>.<field>=value`
+You can override any field for specific zones/providers using the format: `dockdns.overrides.<zone-id>.<field>=value`
 
-The `<zone-id>` should match the zone's `id` field (or zone `name` if `id` is not set).
+The `<zone-id>` must match the zone's `id` field and may only contain letters, numbers, and underscores. Docker label overrides require an explicit safe zone `id`; zone names such as `example.com` cannot be used directly in override labels. Empty or omitted override values inherit the base record value. A static base IP with a dynamic IP override is not currently supported.
 
 | Label | Example | Description |
 |----------------------|-------------------------------------------|-------------|
-| dockdns.\<id\>.a | dockdns.cloudflare-prod.a=10.0.0.5 | Zone-specific IPv4 address |
-| dockdns.\<id\>.aaaa | dockdns.zone1.aaaa=2001:db8::5 | Zone-specific IPv6 address |
-| dockdns.\<id\>.cname | dockdns.technitium-internal.cname=target.local | Zone-specific CNAME target |
-| dockdns.\<id\>.ttl | dockdns.zone1.ttl=600 | Zone-specific TTL |
-| dockdns.\<id\>.proxied | dockdns.cloudflare-prod.proxied=true | Zone-specific proxied setting |
-| dockdns.\<id\>.comment | dockdns.zone1.comment=Zone comment | Zone-specific comment |
+| dockdns.overrides.\<id\>.a | dockdns.overrides.cloudflare_prod.a=10.0.0.5 | Zone-specific IPv4 address |
+| dockdns.overrides.\<id\>.aaaa | dockdns.overrides.zone1.aaaa=2001:db8::5 | Zone-specific IPv6 address |
+| dockdns.overrides.\<id\>.cname | dockdns.overrides.technitium_internal.cname=target.local | Zone-specific CNAME target |
+| dockdns.overrides.\<id\>.ttl | dockdns.overrides.zone1.ttl=600 | Zone-specific TTL |
+| dockdns.overrides.\<id\>.proxied | dockdns.overrides.cloudflare_prod.proxied=true | Zone-specific proxied setting |
+| dockdns.overrides.\<id\>.comment | dockdns.overrides.zone1.comment=Zone comment | Zone-specific comment |
 
 Example:
 ```yaml
 # Group settings by zone
-dockdns.cloudflare-prod.a=10.0.0.5
-dockdns.cloudflare-prod.proxied=true
-dockdns.technitium-internal.a=192.168.1.10
-dockdns.technitium-internal.ttl=600
+dockdns.overrides.cloudflare_prod.a=10.0.0.5
+dockdns.overrides.cloudflare_prod.proxied=true
+dockdns.overrides.technitium_internal.a=192.168.1.10
+dockdns.overrides.technitium_internal.ttl=600
 ```
 
 ---
@@ -166,8 +166,7 @@ dockdns -config /path/to/config.yaml
 ### Docker
 
 ```bash
-# Set HOST_HOSTNAME to the actual hostname of the server
-docker run -e HOST_HOSTNAME=myserver1 -v ./config.yaml:/app/config.yaml -v /var/run/docker.sock:/var/run/docker.sock:ro ghcr.io/tarow/dockdns:latest
+docker run -v ./config.yaml:/app/config.yaml -v /var/run/docker.sock:/var/run/docker.sock:ro ghcr.io/tarow/dockdns:latest
 ```
 
 ### Docker Compose
@@ -177,8 +176,6 @@ services:
   dockdns:
     image: ghcr.io/tarow/dockdns:latest
     restart: unless-stopped
-    environment:
-      - HOST_HOSTNAME=myserver1  # Set to the actual hostname of this server
     volumes:
       - ./config.yaml:/app/config.yaml
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -200,7 +197,6 @@ For example, if you use [docker-socket-proxy](https://github.com/Tecnativa/docke
 | Variable | Description |
 |----------|-------------|
 | `DOCKER_HOST` | Docker daemon socket (e.g., `tcp://docker-socket-proxy:2375`) |
-| `HOST_HOSTNAME` | Physical host machine's hostname. Used in Technitium DNS record comments to identify which host created the record. Set to `$(hostname)` when running in Docker. |
 
 ## Development
 

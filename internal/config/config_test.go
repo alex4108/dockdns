@@ -15,8 +15,8 @@ func TestZone_GetKey(t *testing.T) {
 	}{
 		{
 			name:     "with ID set",
-			zone:     Zone{Name: "example.com", ID: "my-custom-id"},
-			expected: "my-custom-id",
+			zone:     Zone{Name: "example.com", ID: "my_custom_id"},
+			expected: "my_custom_id",
 		},
 		{
 			name:     "without ID (fallback to Name)",
@@ -29,9 +29,9 @@ func TestZone_GetKey(t *testing.T) {
 			expected: "",
 		},
 		{
-			name:     "ID with special characters",
-			zone:     Zone{Name: "example.com", ID: "cf-prod-zone"},
-			expected: "cf-prod-zone",
+			name:     "ID with underscores",
+			zone:     Zone{Name: "example.com", ID: "cf_prod_zone"},
+			expected: "cf_prod_zone",
 		},
 	}
 
@@ -44,9 +44,83 @@ func TestZone_GetKey(t *testing.T) {
 	}
 }
 
+func TestIsValidOverrideZoneID(t *testing.T) {
+	tests := []struct {
+		id       string
+		expected bool
+	}{
+		{id: "cloudflare_prod", expected: true},
+		{id: "zone1", expected: true},
+		{id: "ZONE_1", expected: true},
+		{id: "example.com", expected: false},
+		{id: "cloudflare-prod", expected: false},
+		{id: "", expected: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.id, func(t *testing.T) {
+			if got := IsValidOverrideZoneID(tt.id); got != tt.expected {
+				t.Errorf("IsValidOverrideZoneID(%q) = %v, want %v", tt.id, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestAppConfig_Validate(t *testing.T) {
+	tests := []struct {
+		name        string
+		cfg         AppConfig
+		expectError bool
+	}{
+		{
+			name: "valid explicit zone IDs",
+			cfg: AppConfig{Zones: Zones{
+				{Name: "example.com", ID: "cloudflare_prod"},
+				{Name: "internal.example.com", ID: "technitium_internal"},
+			}},
+		},
+		{
+			name: "invalid explicit zone ID",
+			cfg: AppConfig{Zones: Zones{
+				{Name: "example.com", ID: "cloudflare-prod"},
+			}},
+			expectError: true,
+		},
+		{
+			name: "duplicate explicit zone IDs",
+			cfg: AppConfig{Zones: Zones{
+				{Name: "example.com", ID: "zone1"},
+				{Name: "example.net", ID: "zone1"},
+			}},
+			expectError: true,
+		},
+		{
+			name: "explicit ID collides with fallback zone name",
+			cfg: AppConfig{Zones: Zones{
+				{Name: "zone1"},
+				{Name: "example.net", ID: "zone1"},
+			}},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.Validate()
+			if (err != nil) != tt.expectError {
+				t.Fatalf("Validate() error = %v, expectError %v", err, tt.expectError)
+			}
+		})
+	}
+}
+
 // base is a small helper to build a DomainRecord with just the inline base fields set.
 func base(b DomainRecordBase) DomainRecord {
 	return DomainRecord{DomainRecordBase: b}
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }
 
 // withOverrides builds a DomainRecord with base fields and a per-zone override map.
@@ -200,21 +274,21 @@ func TestDomainRecord_GetProxiedForZone(t *testing.T) {
 	}{
 		{
 			name:     "default proxied value",
-			record:   base(DomainRecordBase{Proxied: true}),
+			record:   base(DomainRecordBase{Proxied: boolPtr(true)}),
 			zoneID:   "zone1",
 			expected: true,
 		},
 		{
-			name:     "default false",
-			record:   base(DomainRecordBase{Proxied: false}),
+			name:     "default false when unset",
+			record:   base(DomainRecordBase{}),
 			zoneID:   "zone1",
 			expected: false,
 		},
 		{
 			name: "zone-specific override to true",
 			record: withOverrides(
-				DomainRecordBase{Proxied: false},
-				map[string]DomainRecordBase{"zone1": {Proxied: true}},
+				DomainRecordBase{Proxied: boolPtr(false)},
+				map[string]DomainRecordBase{"zone1": {Proxied: boolPtr(true)}},
 			),
 			zoneID:   "zone1",
 			expected: true,
@@ -222,24 +296,33 @@ func TestDomainRecord_GetProxiedForZone(t *testing.T) {
 		{
 			name: "zone-specific override to false",
 			record: withOverrides(
-				DomainRecordBase{Proxied: true},
-				map[string]DomainRecordBase{"zone1": {Proxied: false}},
+				DomainRecordBase{Proxied: boolPtr(true)},
+				map[string]DomainRecordBase{"zone1": {Proxied: boolPtr(false)}},
 			),
 			zoneID:   "zone1",
 			expected: false,
 		},
 		{
+			name: "zone-specific unset override inherits base",
+			record: withOverrides(
+				DomainRecordBase{Proxied: boolPtr(true)},
+				map[string]DomainRecordBase{"zone1": {CName: "target.example.com"}},
+			),
+			zoneID:   "zone1",
+			expected: true,
+		},
+		{
 			name: "override not matching zone",
 			record: withOverrides(
-				DomainRecordBase{Proxied: true},
-				map[string]DomainRecordBase{"other-zone": {Proxied: false}},
+				DomainRecordBase{Proxied: boolPtr(true)},
+				map[string]DomainRecordBase{"other-zone": {Proxied: boolPtr(false)}},
 			),
 			zoneID:   "zone1",
 			expected: true,
 		},
 		{
 			name:     "nil overrides map",
-			record:   base(DomainRecordBase{Proxied: true}),
+			record:   base(DomainRecordBase{Proxied: boolPtr(true)}),
 			zoneID:   "zone1",
 			expected: true,
 		},

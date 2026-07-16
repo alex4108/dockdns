@@ -75,7 +75,7 @@ func parseLabels(ctr container.Summary, targetStruct *config.DomainRecord) error
 		return err
 	}
 
-	// Parse provider-specific overrides (e.g., dockdns.technitium.cname, dockdns.cloudflare.proxied)
+	// Parse provider-specific overrides (e.g., dockdns.overrides.technitium.a, dockdns.overrides.cloudflare.proxied)
 	parseProviderOverrides(containerLabels, targetStruct)
 
 	return nil
@@ -111,17 +111,18 @@ func parseLabeledFields(targetStruct *config.DomainRecordBase, containerLabels m
 
 // parseProviderOverrides extracts provider/zone-specific overrides from container labels.
 //
-// Label format: "dockdns.<zone-id>.<field>=value"
+// Label format: "dockdns.overrides.<zone-id>.<field>=value"
 // Examples:
-//   - dockdns.cloudflare-prod.a=10.0.0.5
-//   - dockdns.technitium-internal.cname=internal.example.com
-//   - dockdns.zone1.ttl=600
+//   - dockdns.overrides.cloudflare_prod.a=10.0.0.5
+//   - dockdns.overrides.technitium_internal.cname=internal.example.com
+//   - dockdns.overrides.zone1.ttl=600
 //
-// The zone ID is the value of the zone's 'id' field in config, or the zone name if 'id' is not set.
+// The zone ID is the value of the zone's 'id' field in config. Docker label
+// overrides require IDs with only letters, numbers, and underscores.
 // Each override is stored as a config.DomainRecordBase in record.Overrides[zoneID],
 // reusing the same field shape as the base record.
 func parseProviderOverrides(labels map[string]string, record *config.DomainRecord) {
-	const dockdnsPrefix = "dockdns."
+	const overridePrefix = "dockdns.overrides."
 
 	setOverride := func(zoneID string, mutate func(*config.DomainRecordBase)) {
 		if record.Overrides == nil {
@@ -133,25 +134,28 @@ func parseProviderOverrides(labels map[string]string, record *config.DomainRecor
 	}
 
 	for label, value := range labels {
-		if !strings.HasPrefix(label, dockdnsPrefix) {
+		if !strings.HasPrefix(label, overridePrefix) {
 			continue
 		}
 
-		// Remove "dockdns." prefix
-		rest := strings.TrimPrefix(label, dockdnsPrefix)
-
-		// Split by dots to get parts: dockdns.<zone-id>.<field>
-		parts := strings.SplitN(rest, ".", 2)
+		// Remove "dockdns.overrides." prefix and split into <zone-id>.<field>.
+		rest := strings.TrimPrefix(label, overridePrefix)
+		parts := strings.Split(rest, ".")
 		if len(parts) != 2 {
-			// Not an override label (could be dockdns.name, dockdns.a, etc.)
+			slog.Warn("invalid override label format", "label", label)
 			continue
 		}
 
 		zoneID := parts[0]
 		field := parts[1]
 
-		// Skip if zoneID or value is empty
-		if zoneID == "" || value == "" {
+		if !config.IsValidOverrideZoneID(zoneID) {
+			slog.Warn("invalid override zone id", "label", label, "zoneID", zoneID)
+			continue
+		}
+
+		// Empty values are treated as unset, so overrides inherit the base value.
+		if value == "" {
 			continue
 		}
 
@@ -180,10 +184,13 @@ func parseProviderOverrides(labels map[string]string, record *config.DomainRecor
 				slog.Warn("invalid boolean value for proxied override", "label", label, "value", value)
 				continue
 			}
-			setOverride(zoneID, func(b *config.DomainRecordBase) { b.Proxied = boolValue })
+			setOverride(zoneID, func(b *config.DomainRecordBase) { b.Proxied = &boolValue })
 
 		case "comment":
 			setOverride(zoneID, func(b *config.DomainRecordBase) { b.Comment = value })
+
+		default:
+			slog.Warn("unknown override field", "label", label, "field", field)
 		}
 	}
 }

@@ -50,15 +50,20 @@ func main() {
 	if dryRun {
 		slog.Info("Dry run enabled, changes won't be applied")
 	}
+	if err := appCfg.Validate(); err != nil {
+		slog.Error("Invalid config", "error", err)
+		os.Exit(1)
+	}
+
 	providers := map[string]dns.ProviderInfo{}
 	for _, zone := range appCfg.Zones {
+		// Use zone's key (ID if set, otherwise Name) for provider lookup
+		zoneKey := zone.GetKey()
 		dnsProvider, err := provider.Get(&zone, dryRun)
 		if err != nil {
 			slog.Error("Failed to create DNS provider", "zone", zone.Name, "error", err)
 			os.Exit(1)
 		}
-		// Use zone's key (ID if set, otherwise Name) for provider lookup
-		zoneKey := zone.GetKey()
 		providers[zoneKey] = dns.ProviderInfo{
 			Provider: dnsProvider,
 			ZoneName: zone.Name,

@@ -75,8 +75,8 @@ static/         # Static assets (JS)
 
 ### Configuration
 - Zone configs support optional `id` field for override lookups (defaults to zone `name`)
-- Provider-specific overrides use zone ID as key: `cnameOverrides`, `proxiedOverrides`
-- Docker labels: `dockdns.name`, `dockdns.cname`, `dockdns.cname.<zone-id>`, etc.
+- Provider-specific overrides use zone ID as key under `overrides`
+- Docker labels: `dockdns.name`, `dockdns.cname`, `dockdns.overrides.<zone-id>.<field>`, etc.
 
 ### Testing Guidelines
 - Unit tests go in `*_test.go` files alongside the code

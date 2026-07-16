@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -65,46 +64,16 @@ type rData struct {
 	CName     string `json:"cname,omitempty"`     // Alternative CNAME field
 }
 
-// generateDockDNSComment creates a standardized comment for Technitium DNS records
-// that identifies the record as managed by DockDNS and provides context about its origin.
-func generateDockDNSComment(record dns.Record) string {
-	// Try to get the physical host hostname from environment variable first.
-	// This allows the container to report the actual host machine's name
-	// when HOST_HOSTNAME is set (e.g., via docker run -e HOST_HOSTNAME=$(hostname)).
-	hostname := os.Getenv("HOST_HOSTNAME")
-	if hostname == "" {
-		var err error
-		hostname, err = os.Hostname()
-		if err != nil {
-			hostname = "unknown"
-		}
+func recordID(name, recordType, content string) string {
+	return fmt.Sprintf("%s:%s:%s", name, recordType, content)
+}
+
+func parseRecordID(id string) (name string, recordType string, content string, ok bool) {
+	parts := strings.SplitN(id, ":", 3)
+	if len(parts) != 3 || parts[0] == "" || parts[1] == "" {
+		return "", "", "", false
 	}
-
-	timestamp := time.Now().UTC().Format(time.RFC3339)
-
-	// Build the comment with available metadata
-	parts := []string{
-		"[DockDNS]",
-		fmt.Sprintf("host=%s", hostname),
-		fmt.Sprintf("updated=%s", timestamp),
-	}
-
-	// Add source-specific information
-	if record.Source == "docker" {
-		parts = append(parts, "source=docker")
-		if record.ContainerID != "" {
-			parts = append(parts, fmt.Sprintf("container_id=%s", record.ContainerID))
-		}
-		if record.ContainerName != "" {
-			parts = append(parts, fmt.Sprintf("container_name=%s", record.ContainerName))
-		}
-	} else if record.Source == "static" {
-		parts = append(parts, "source=static")
-	} else {
-		parts = append(parts, "source=dockdns")
-	}
-
-	return strings.Join(parts, " | ")
+	return parts[0], parts[1], parts[2], true
 }
 
 // New creates a new TechnitiumProvider.
@@ -338,7 +307,7 @@ func (p *TechnitiumProvider) List() ([]dns.Record, error) {
 		}
 
 		records = append(records, dns.Record{
-			ID:      fmt.Sprintf("%s:%s:%s", rec.Name, rec.Type, content),
+			ID:      recordID(rec.Name, rec.Type, content),
 			Name:    rec.Name,
 			Type:    rec.Type,
 			Content: content,
@@ -389,7 +358,7 @@ func (p *TechnitiumProvider) Get(name string, recordType string) (dns.Record, er
 			}
 
 			return dns.Record{
-				ID:      fmt.Sprintf("%s:%s:%s", rec.Name, rec.Type, content),
+				ID:      recordID(rec.Name, rec.Type, content),
 				Name:    rec.Name,
 				Type:    rec.Type,
 				Content: content,
@@ -410,10 +379,7 @@ func (p *TechnitiumProvider) Create(record dns.Record) (dns.Record, error) {
 	data.Set("type", record.Type)
 	data.Set("ttl", fmt.Sprintf("%d", record.TTL))
 
-	// Generate DockDNS comment for Technitium to identify managed records
-	comment := generateDockDNSComment(record)
-	data.Set("comments", comment)
-	record.Comment = comment
+	data.Set("comments", record.Comment)
 
 	switch record.Type {
 	case constants.RecordTypeA, constants.RecordTypeAAAA:
@@ -439,7 +405,7 @@ func (p *TechnitiumProvider) Create(record dns.Record) (dns.Record, error) {
 	}
 
 	// Generate an ID for the created record
-	record.ID = fmt.Sprintf("%s:%s:%s", record.Name, record.Type, record.Content)
+	record.ID = recordID(record.Name, record.Type, record.Content)
 
 	slog.Debug("Created record in Technitium DNS",
 		"name", record.Name,
@@ -450,20 +416,21 @@ func (p *TechnitiumProvider) Create(record dns.Record) (dns.Record, error) {
 }
 
 func (p *TechnitiumProvider) Update(record dns.Record) (dns.Record, error) {
-	// For Technitium, we need to parse the old values from the ID
+	// For Technitium, we need to parse the old values from the ID.
 	// ID format: name:type:oldContent
-	parts := strings.Split(record.ID, ":")
-	if len(parts) < 3 {
+	_, _, oldContent, ok := parseRecordID(record.ID)
+	if !ok {
 		// If no ID or invalid ID, try to find existing record
 		existing, err := p.Get(record.Name, record.Type)
 		if err != nil || existing.ID == "" {
 			// Record doesn't exist, create it instead
 			return p.Create(record)
 		}
-		parts = strings.Split(existing.ID, ":")
+		_, _, oldContent, ok = parseRecordID(existing.ID)
+		if !ok {
+			return p.Create(record)
+		}
 	}
-
-	oldContent := parts[2]
 
 	data := url.Values{}
 	data.Set("domain", record.Name)
@@ -471,10 +438,7 @@ func (p *TechnitiumProvider) Update(record dns.Record) (dns.Record, error) {
 	data.Set("type", record.Type)
 	data.Set("ttl", fmt.Sprintf("%d", record.TTL))
 
-	// Generate DockDNS comment for Technitium to identify managed records
-	comment := generateDockDNSComment(record)
-	data.Set("comments", comment)
-	record.Comment = comment
+	data.Set("comments", record.Comment)
 
 	switch record.Type {
 	case constants.RecordTypeA, constants.RecordTypeAAAA:
@@ -510,7 +474,7 @@ func (p *TechnitiumProvider) Update(record dns.Record) (dns.Record, error) {
 	}
 
 	// Update the ID with new content
-	record.ID = fmt.Sprintf("%s:%s:%s", record.Name, record.Type, record.Content)
+	record.ID = recordID(record.Name, record.Type, record.Content)
 
 	slog.Debug("Updated record in Technitium DNS",
 		"name", record.Name,

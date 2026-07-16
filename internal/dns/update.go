@@ -16,11 +16,13 @@ func (h Handler) updateRecords(provider Provider, domains []config.DomainRecord,
 		if strings.TrimSpace(cname) != "" {
 			h.updateRecord(provider, domain, constants.RecordTypeCNAME, zoneKey)
 		} else {
-			if strings.TrimSpace(domain.IP4) != "" && h.DnsCfg.EnableIP4 {
+			ip4 := domain.GetContentForZone(constants.RecordTypeA, zoneKey)
+			if strings.TrimSpace(ip4) != "" && h.DnsCfg.EnableIP4 {
 				h.updateRecord(provider, domain, constants.RecordTypeA, zoneKey)
 			}
 
-			if strings.TrimSpace(domain.IP6) != "" && h.DnsCfg.EnableIP6 {
+			ip6 := domain.GetContentForZone(constants.RecordTypeAAAA, zoneKey)
+			if strings.TrimSpace(ip6) != "" && h.DnsCfg.EnableIP6 {
 				h.updateRecord(provider, domain, constants.RecordTypeAAAA, zoneKey)
 			}
 		}

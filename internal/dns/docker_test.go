@@ -1,10 +1,15 @@
 package dns
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/Tarow/dockdns/internal/config"
 )
+
+func boolPtr(v bool) *bool {
+	return &v
+}
 
 func TestParseProviderOverrides_NewFormat(t *testing.T) {
 	tests := []struct {
@@ -15,7 +20,7 @@ func TestParseProviderOverrides_NewFormat(t *testing.T) {
 		{
 			name: "a record override",
 			labels: map[string]string{
-				"dockdns.zone1.a": "10.0.0.5",
+				"dockdns.overrides.zone1.a": "10.0.0.5",
 			},
 			expected: map[string]config.DomainRecordBase{
 				"zone1": {IP4: "10.0.0.5"},
@@ -24,7 +29,7 @@ func TestParseProviderOverrides_NewFormat(t *testing.T) {
 		{
 			name: "aaaa record override",
 			labels: map[string]string{
-				"dockdns.zone1.aaaa": "2001:db8::5",
+				"dockdns.overrides.zone1.aaaa": "2001:db8::5",
 			},
 			expected: map[string]config.DomainRecordBase{
 				"zone1": {IP6: "2001:db8::5"},
@@ -33,16 +38,16 @@ func TestParseProviderOverrides_NewFormat(t *testing.T) {
 		{
 			name: "cname override",
 			labels: map[string]string{
-				"dockdns.technitium-internal.cname": "internal.example.com",
+				"dockdns.overrides.technitium_internal.cname": "internal.example.com",
 			},
 			expected: map[string]config.DomainRecordBase{
-				"technitium-internal": {CName: "internal.example.com"},
+				"technitium_internal": {CName: "internal.example.com"},
 			},
 		},
 		{
 			name: "ttl override",
 			labels: map[string]string{
-				"dockdns.zone1.ttl": "600",
+				"dockdns.overrides.zone1.ttl": "600",
 			},
 			expected: map[string]config.DomainRecordBase{
 				"zone1": {TTL: 600},
@@ -51,16 +56,16 @@ func TestParseProviderOverrides_NewFormat(t *testing.T) {
 		{
 			name: "proxied override",
 			labels: map[string]string{
-				"dockdns.cloudflare-prod.proxied": "true",
+				"dockdns.overrides.cloudflare_prod.proxied": "true",
 			},
 			expected: map[string]config.DomainRecordBase{
-				"cloudflare-prod": {Proxied: true},
+				"cloudflare_prod": {Proxied: boolPtr(true)},
 			},
 		},
 		{
 			name: "comment override",
 			labels: map[string]string{
-				"dockdns.zone1.comment": "Zone-specific comment",
+				"dockdns.overrides.zone1.comment": "Zone-specific comment",
 			},
 			expected: map[string]config.DomainRecordBase{
 				"zone1": {Comment: "Zone-specific comment"},
@@ -69,26 +74,26 @@ func TestParseProviderOverrides_NewFormat(t *testing.T) {
 		{
 			name: "multiple fields in one zone merge into a single override block",
 			labels: map[string]string{
-				"dockdns.technitium-internal.cname":   "internal.local",
-				"dockdns.technitium-internal.comment": "Internal server",
+				"dockdns.overrides.technitium_internal.cname":   "internal.local",
+				"dockdns.overrides.technitium_internal.comment": "Internal server",
 			},
 			expected: map[string]config.DomainRecordBase{
-				"technitium-internal": {CName: "internal.local", Comment: "Internal server"},
+				"technitium_internal": {CName: "internal.local", Comment: "Internal server"},
 			},
 		},
 		{
 			name: "multiple overrides for different zones",
 			labels: map[string]string{
-				"dockdns.zone1.a":                   "10.0.0.5",
-				"dockdns.zone2.a":                   "10.0.0.6",
-				"dockdns.cloudflare-prod.proxied":   "true",
-				"dockdns.technitium-internal.cname": "internal.local",
+				"dockdns.overrides.zone1.a":                   "10.0.0.5",
+				"dockdns.overrides.zone2.a":                   "10.0.0.6",
+				"dockdns.overrides.cloudflare_prod.proxied":   "true",
+				"dockdns.overrides.technitium_internal.cname": "internal.local",
 			},
 			expected: map[string]config.DomainRecordBase{
 				"zone1":               {IP4: "10.0.0.5"},
 				"zone2":               {IP4: "10.0.0.6"},
-				"cloudflare-prod":     {Proxied: true},
-				"technitium-internal": {CName: "internal.local"},
+				"cloudflare_prod":     {Proxied: boolPtr(true)},
+				"technitium_internal": {CName: "internal.local"},
 			},
 		},
 	}
@@ -108,12 +113,12 @@ func TestParseProviderOverrides_NewFormat(t *testing.T) {
 func TestParseProviderOverrides_MultipleZones(t *testing.T) {
 	// Test multiple overrides for multiple zones
 	labels := map[string]string{
-		"dockdns.zone1.a":             "10.0.0.5",
-		"dockdns.zone2.cname":         "target.com",
-		"dockdns.cloudflare-prod.ttl": "600",
-		"dockdns.technitium.proxied":  "false",
-		"dockdns.zone3.comment":       "Production server",
-		"dockdns.zone4.aaaa":          "2001:db8::10",
+		"dockdns.overrides.zone1.a":             "10.0.0.5",
+		"dockdns.overrides.zone2.cname":         "target.com",
+		"dockdns.overrides.cloudflare_prod.ttl": "600",
+		"dockdns.overrides.technitium.proxied":  "false",
+		"dockdns.overrides.zone3.comment":       "Production server",
+		"dockdns.overrides.zone4.aaaa":          "2001:db8::10",
 	}
 
 	record := &config.DomainRecord{}
@@ -128,15 +133,15 @@ func TestParseProviderOverrides_MultipleZones(t *testing.T) {
 		t.Errorf("Overrides[zone2].CName = %v, want target.com", record.Overrides["zone2"].CName)
 	}
 
-	if record.Overrides["cloudflare-prod"].TTL != 600 {
-		t.Errorf("Overrides[cloudflare-prod].TTL = %v, want 600", record.Overrides["cloudflare-prod"].TTL)
+	if record.Overrides["cloudflare_prod"].TTL != 600 {
+		t.Errorf("Overrides[cloudflare_prod].TTL = %v, want 600", record.Overrides["cloudflare_prod"].TTL)
 	}
 
 	// Explicit override to false must be recorded (present in the map).
 	if _, ok := record.Overrides["technitium"]; !ok {
 		t.Errorf("Overrides[technitium] should exist for explicit proxied=false")
 	}
-	if record.Overrides["technitium"].Proxied != false {
+	if record.Overrides["technitium"].Proxied == nil || *record.Overrides["technitium"].Proxied != false {
 		t.Errorf("Overrides[technitium].Proxied = %v, want false", record.Overrides["technitium"].Proxied)
 	}
 
@@ -151,14 +156,17 @@ func TestParseProviderOverrides_MultipleZones(t *testing.T) {
 
 func TestParseProviderOverrides_SkipsInvalidLabels(t *testing.T) {
 	labels := map[string]string{
-		"dockdns.name":          "test.com",     // Not an override
-		"dockdns.a":             "10.0.0.1",     // Not an override
-		"dockdns.zone1.invalid": "value",        // Invalid field
-		"dockdns.zone1.ttl":     "not-a-number", // Invalid TTL
-		"dockdns.zone1.proxied": "not-a-bool",   // Invalid boolean
-		"dockdns.zone1.a":       "",             // Empty value
-		"dockdns":               "value",        // No parts
-		"other.zone1.a":         "10.0.0.5",     // Wrong prefix
+		"dockdns.name":                        "test.com",     // Not an override
+		"dockdns.a":                           "10.0.0.1",     // Not an override
+		"dockdns.zone1.a":                     "10.0.0.5",     // Old non-namespaced format is ignored
+		"dockdns.overrides.zone1.invalid":     "value",        // Invalid field
+		"dockdns.overrides.zone1.ttl":         "not-a-number", // Invalid TTL
+		"dockdns.overrides.zone1.proxied":     "not-a-bool",   // Invalid boolean
+		"dockdns.overrides.zone1.a":           "",             // Empty value
+		"dockdns.overrides.example.com.cname": "target.com",   // Dotted zone IDs are invalid format
+		"dockdns.overrides.zone-with-dash.a":  "10.0.0.5",     // Invalid zone ID
+		"dockdns.overrides":                   "value",        // No parts
+		"other.zone1.a":                       "10.0.0.5",     // Wrong prefix
 	}
 
 	record := &config.DomainRecord{}
@@ -172,14 +180,5 @@ func TestParseProviderOverrides_SkipsInvalidLabels(t *testing.T) {
 
 // overridesEqual compares two override maps by value.
 func overridesEqual(a, b map[string]config.DomainRecordBase) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, av := range a {
-		bv, ok := b[k]
-		if !ok || av != bv {
-			return false
-		}
-	}
-	return true
+	return reflect.DeepEqual(a, b)
 }
